@@ -1,0 +1,153 @@
+Advanced techniques in signal processing and
+communications
+2025-2026
+Lab #2: Convolutional codes
+March 9, 2026
+1 Introduction
+The goal of this exercise is to study a convolutional encoder, along with its corresponding
+decoder, in Python/MATLAB. It entails writing a program that will generate several
+(independent) sequences of bits, encode each one using a convolutional code, simulate
+their transmission through a binary symmetric channel (BSC), and decode them using
+the Viterbi algorithm. The work to be carried out can roughly be structured into:
+Writing a function whose inputs are the sequence of information bits to be transmit-
+ted and the generator matrix in polynomial form, and whose output is the encoded
+binary sequence.
+Writing a function that simulates the transmission through a channel.
+Writing a function whose input is thereceivedbinary sequence, that returns the
+decoded sequence. The function must make use of theViterbi algorithm.
+Decoding a given sequence of symbols, using the Kalman filter from the previous
+lab to mitigate the interference that is corrupting it.
+For simplicity we assume that the communications system is using abinary con-
+stellation, i.e., every transmitted symbol carries a single bit.
+2 Main program
+Write a Python/MATLAB script named, e.g.,main.{py,m}, that simulates the trans-
+mission through a communications system using a convolutional code. It must generate
+several (independent) random sequences of bits and simulate their encoding, transmission
+and decoding using the implemented functions. In the end, the results obtained for the
+different sequences are averaged to assess the performance of the coding scheme, which
+is illustrated by means of a plot.
+1
+3 Convolutional encoding
+Write a function named, e.g.,conv encoding.{py,m}, that performs the convolutional
+encoding. For that purpose, the function must take as inputs the sequence to be trans-
+mitted and the generator matrix, whose elements can be represented as binary vectors
+with a 1 in the degrees of the polynomial that are present in each output bit, and a 0 in
+those which are not. For example, polynomialD 3+D+1 can be represented as [1,0,1,1].
+an easy way of implementing encoding in
+–Python is usingnumpy.convolve, and in
+–MATLAB is using functionconv.
+Implementation
+4 Channel model
+Initially, we will work with an AWGN (Additive White Gaussian Noise) Channel, where
+the received value at timekisr[k] =s[k] +n[k], withs[k] being the transmitted symbol
+(bit) andn[k] zero-mean Gaussian noise. However, the power (variance) of the noise
+depends on the duration/bandwidth of each symbol. If the symbols are shorter, they
+suffer more noise due to the shorter averaging time (or the wider bandwidth), while the
+noise power is smaller with longer symbols. Specifically, if the noise has power spectral
+densityN 0/2 and each symbol lastsT s seconds, we haven[k]∼ N
+
+0, N0
+2Ts
+
+. If the symbols
+have unit power, the energy per symbol is the same as its durationE s =T s.
+Implement a function called, e.g.,awgn channel.{py,m}which takes as input a se-
+quence of bits and a SNR given byE b/N0. The function must simulate the noise and
+return the corresponding received values.
+Hard decoding is to be implemented, and hence we need a BSC model where received
+values are rounded to the nearest bit. Check that the probability of error obtained with
+the previous function is
+Pe = Q
+ r
+2Es
+N0
+!
+.
+If we encode the information with rateR, the number of symbols to be transmitted
+in the same time period increases andT s decreases proportionally toR. As a result, the
+noise power and the probability of error increases. Check that the probability of error
+when using a code of rateR= 0.5 is
+Pe = Q
+ r
+2EsR
+N0
+!
+,
+whereE s represents the energy perinformationsymbol, having the same value as
+without encoding.
+2
+5 Decoding
+A function named, e.g.,hard decoding.{py,m}implements the Viterbi algorithm for the
+convolutional code with generator matrix
+G(D) = [D 2 + 1, D 2 +D+ 1].
+This function can be found in AulaGlobal.
+6 Interference
+Our system now has to share the channel with another unknown source that generates
+interference according to the following linear system (identical to the one used in Lab 1)
+x[k+ 1] =Ax[k] +u[k],
+y[k] =Bx[k] +v[k],
+where
+A=
+ 0.9 0.12
+0.08 0.85
+
+B=
+ −0.12 0.15
+0.4−0.15
+
+,
+y[0] =
+ 0
+0
+
+and both noises are Gaussianu[k],v[k]∼N(0,0.25I 2). The vectors
+x[k],y[k],u[k],v[k] all have dimension 2x1.
+In AulaGlobal you will find a file called ’observations.txt’ which contains the observed
+valuesy[k] concatenated into a single vector. A second file, called ’data rx.txt’ contains
+the values received by our systemr[k] =s[k] +x[k], corresponding to the values received
+by our system corrupted with the interference. The 2x1 vectors[k] contains the two
+encoded bits corresponding to thek-th information bitb[k].
+Your task is to estimate the interference using the Kalman filter from the previous
+lab, cancel it to the extent possible, decode the sequence, and convert the bits into ASCII
+to extract the hidden message.
+7 Hand-in assignment
+The Python/MATLAB source code implementing the requested tasks must be uploaded
+to AG following the structure outlined above, i.e., you should have separate .py or .m
+files for
+the main script,
+encoding implementation,
+transmission simulation, and
+interference decoding implementation, and
+optionally, extra functions you might use in the above files.
+3
+The file names (main.{py,m},conv encoding.{py,m},...) are illustrative, but you must
+respect the statedfunctionaldivision (every file plays a different role) and submit the
+files to the corresponding sections in AulaGlobal.
+Additionally, the student must write a smallreportshowing the BER curve as a
+function ofE b/N0 for a convolutional encoder with generating matrix
+G(D) = [D 2 + 1, D 2 +D+ 1],
+along with a curve showing the same values without coding. Plot the BER in logarithmic
+scale, so that you can see the necessaryE b/N0 to obtainBER≤10 −4.Brieflydiscuss
+the results in connection with the theoretical properties of the code.
+Regarding implementation, in
+Python: only functions fromnumpy,scipyandmatplotlibare allowed (along
+with any function from thestandardPython library)
+MATLAB: no toolbox can be used in the implementation.
+Important
+The report should not exceed 2 (single-sided) pages.
+Also important
+Appendix: script
+1. Generate a sequence of bits.
+2. Simulate transmission of the sequence of bits through an awgn channel
+3. Compute the average number of erroneous bits (with no coding) in the received
+sequence anc compare with thetheoreticalvalue.
+4. Encode the sequence of bits generated in1using the convolutional code
+5. Simulate transmissionof the encoded sequencethrough an awgn channel. Compute
+the average number of erroneous bits in the received sequence and compare with
+thetheoreticalvalue.
+6. Decode the received sequence using the Viterbi algorithm.
+7. Compute the average number of erroneous bits over the decoded sequence.
+8. Download ’observations.txt’ and ’data rx.txt’ from AulaGlobal. Estimate and can-
+cel the interference, decode the remaining sequence and find the hidden message.
+Figures should show the values obtained in3and8.
+4
