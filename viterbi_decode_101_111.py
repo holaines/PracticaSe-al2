@@ -1,96 +1,111 @@
 import numpy as np
 
 
-def viterbi_decode_101_111(rx_bits):
-    """
-    Hard-decision Viterbi decoder for the rate-1/2 convolutional code
-    with generators:
-        g1 = [1, 0, 1]
-        g2 = [1, 1, 1]
+def _prepare_received_pairs(rx_symbols):
+    rx_symbols = np.asarray(rx_symbols)
 
-    Constraint length K = 3, so there are 2^(K-1) = 4 states.
+    if rx_symbols.ndim == 1:
+        if len(rx_symbols) % 2 != 0:
+            raise ValueError("Input length must be even.")
+        return rx_symbols.reshape(-1, 2)
+
+    if rx_symbols.ndim == 2 and rx_symbols.shape[1] == 2:
+        return rx_symbols
+
+    raise ValueError("Input must be a flat array with even length or an array of shape (N, 2).")
+
+
+def viterbi_decode_101_111(
+    rx_symbols,
+    metric="hard",
+    force_final_state=None,
+    branch_covariances=None,
+):
+    """
+    Decode the rate-1/2 convolutional code with generators [1,0,1] and [1,1,1].
 
     Parameters
     ----------
-    rx_bits : array-like of 0/1
-        Received coded bits. Length must be even.
+    rx_symbols : array-like
+        Received coded sequence. It can be passed as a flat array with even length
+        or as an array with shape (N, 2).
+    metric : {"hard", "soft"}, optional
+        Branch metric used by the decoder.
+        - "hard": Hamming distance on 0/1 received bits.
+        - "soft": Euclidean distance on real-valued received pairs.
+    force_final_state : int or None, optional
+        If the encoder is terminated, use 0 to force the traceback to end in the
+        all-zero state. When None, the decoder chooses the state with minimum metric.
+    branch_covariances : array-like or None, optional
+        Optional sequence with shape (N, 2, 2). When provided together with
+        ``metric="soft"``, the decoder uses a Mahalanobis branch metric.
 
     Returns
     -------
-    u_hat : np.ndarray
+    np.ndarray
         Decoded information bits as a 1-D array of 0/1.
     """
-    rx_bits = np.asarray(rx_bits, dtype=int).flatten()
+    rx_pairs = _prepare_received_pairs(rx_symbols)
+    n_steps = rx_pairs.shape[0]
 
-    if len(rx_bits) % 2 != 0:
-        raise ValueError("Input length must be even.")
+    if metric not in {"hard", "soft"}:
+        raise ValueError("metric must be 'hard' or 'soft'.")
 
-    n_steps = len(rx_bits) // 2
+    inv_branch_covariances = None
+    if branch_covariances is not None:
+        branch_covariances = np.asarray(branch_covariances, dtype=float)
+        if branch_covariances.shape != (n_steps, 2, 2):
+            raise ValueError("branch_covariances must have shape (N, 2, 2).")
+        inv_branch_covariances = np.linalg.inv(branch_covariances)
+
     num_states = 4
-    inf_metric = 10**9
+    inf_metric = 1.0e18
 
-    # Path metrics
     pm = np.full((num_states, n_steps + 1), inf_metric, dtype=float)
-
-    # Survivor memory
     prev_state_mem = np.zeros((num_states, n_steps), dtype=int)
     input_mem = np.zeros((num_states, n_steps), dtype=int)
+    pm[0, 0] = 0.0
 
-    # Start in all-zero state
-    pm[0, 0] = 0
-
-    # Precompute transitions and outputs
-    # State encoding:
-    #   0 -> [0,0]
-    #   1 -> [0,1]
-    #   2 -> [1,0]
-    #   3 -> [1,1]
-    #
-    # Here:
-    #   m1 = u(k-1), m2 = u(k-2)
     next_state = np.zeros((num_states, 2), dtype=int)
-    out_bits = np.zeros((num_states, 2, 2), dtype=int)
+    out_bits = np.zeros((num_states, 2, 2), dtype=float)
 
-    for s in range(num_states):
-        m1 = (s >> 1) & 1
-        m2 = s & 1
+    for state in range(num_states):
+        m1 = (state >> 1) & 1
+        m2 = state & 1
 
         for u in (0, 1):
-            # g1 = [1,0,1] => y1 = u xor m2
-            # g2 = [1,1,1] => y2 = u xor m1 xor m2
             y1 = (u + m2) % 2
             y2 = (u + m1 + m2) % 2
 
-            out_bits[s, u, :] = [y1, y2]
+            out_bits[state, u, :] = [y1, y2]
+            next_state[state, u] = (u << 1) | m1
 
-            # Next state = [u, m1]
-            s_next = (u << 1) | m1
-            next_state[s, u] = s_next
-
-    # Forward recursion
     for k in range(n_steps):
-        r = rx_bits[2 * k: 2 * k + 2]
+        r = rx_pairs[k]
+        weight = None if inv_branch_covariances is None else inv_branch_covariances[k]
 
-        for s in range(num_states):
-            if pm[s, k] >= inf_metric:
+        for state in range(num_states):
+            if pm[state, k] >= inf_metric:
                 continue
 
             for u in (0, 1):
-                s_next = next_state[s, u]
-                y = out_bits[s, u, :]
+                s_next = next_state[state, u]
+                y = out_bits[state, u, :]
 
-                # Hamming distance branch metric
-                branch_metric = np.sum(r != y)
-                cand_metric = pm[s, k] + branch_metric
+                if metric == "hard":
+                    branch_metric = np.sum(r.astype(int) != y.astype(int))
+                else:
+                    err = r - y
+                    branch_metric = err @ err if weight is None else err @ weight @ err
+
+                cand_metric = pm[state, k] + branch_metric
 
                 if cand_metric < pm[s_next, k + 1]:
                     pm[s_next, k + 1] = cand_metric
-                    prev_state_mem[s_next, k] = s
+                    prev_state_mem[s_next, k] = state
                     input_mem[s_next, k] = u
 
-    # Traceback
-    # If encoder was terminated, you can force final state = 0.
-    state = np.argmin(pm[:, n_steps])
+    state = np.argmin(pm[:, n_steps]) if force_final_state is None else force_final_state
 
     u_hat = np.zeros(n_steps, dtype=int)
     for k in range(n_steps - 1, -1, -1):

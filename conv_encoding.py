@@ -1,6 +1,7 @@
 import numpy as np
 
 def conv_encoding(bits, G):
+    
     """
     Encode a sequence of bits using a convolutional encoder.
     
